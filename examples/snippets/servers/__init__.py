@@ -18,6 +18,18 @@ def run_server():
     Usage: server <server-name> [transport]
     Example: server basic_tool sse
     """
+    # Whitelist of allowed servers to prevent arbitrary module loading
+    allowed_servers = {
+        "basic_tool",
+        "basic_resource", 
+        "basic_prompt",
+        "tool_progress",
+        "sampling",
+        "elicitation",
+        "completion",
+        "notifications"
+    }
+    
     if len(sys.argv) < 2:
         print("Usage: server <server-name> [transport]")
         print("Available servers: basic_tool, basic_resource, basic_prompt, tool_progress,")
@@ -27,6 +39,11 @@ def run_server():
 
     server_name = sys.argv[1]
     transport = sys.argv[2] if len(sys.argv) > 2 else "stdio"
+
+    # Validate server name against whitelist
+    if server_name not in allowed_servers:
+        print(f"Error: Server '{server_name}' not found")
+        sys.exit(1)
 
     try:
         module = importlib.import_module(f".{server_name}", package=__name__)
