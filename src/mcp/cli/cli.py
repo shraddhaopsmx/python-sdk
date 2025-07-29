@@ -3,6 +3,7 @@
 import importlib.metadata
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -116,6 +117,33 @@ def _parse_file_path(file_spec: str) -> tuple[Path, str | None]:
     return file_path, server_object
 
 
+def _validate_module_name(module_name: str) -> bool:
+    """Validate that a module name is safe to import.
+    
+    Args:
+        module_name: The module name to validate
+        
+    Returns:
+        True if the module name is safe to import, False otherwise
+    """
+    # Allow only alphanumeric characters, underscores, and dots
+    # This prevents path traversal and other injection attacks
+    if not re.match(r"^[a-zA-Z0-9_\.]+$", module_name):
+        return False
+    
+    # Reject common dangerous patterns
+    dangerous_patterns = [
+        "..", "os", "sys", "subprocess", "importlib", "__import__",
+        "eval", "exec", "compile", "open", "file", "input", "raw_input"
+    ]
+    
+    for pattern in dangerous_patterns:
+        if pattern in module_name:
+            return False
+    
+    return True
+
+
 def _import_server(file: Path, server_object: str | None = None):
     """Import a MCP server from a file.
 
@@ -182,6 +210,15 @@ def _import_server(file: Path, server_object: str | None = None):
     # Handle module:object syntax
     if ":" in server_object:
         module_name, object_name = server_object.split(":", 1)
+        
+        # Validate module name to prevent arbitrary code execution
+        if not _validate_module_name(module_name):
+            logger.error(
+                f"Invalid module name '{module_name}'. Module names must contain only alphanumeric characters, underscores, and dots.",
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+        
         try:
             server_module = importlib.import_module(module_name)
             server = getattr(server_module, object_name, None)
