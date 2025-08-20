@@ -28,6 +28,24 @@ def run_server():
     server_name = sys.argv[1]
     transport = sys.argv[2] if len(sys.argv) > 2 else "stdio"
 
+    # Whitelist of allowed server modules to prevent loading arbitrary code
+    allowed_servers = {
+        "basic_tool",
+        "basic_resource", 
+        "basic_prompt",
+        "tool_progress",
+        "sampling",
+        "elicitation",
+        "completion",
+        "notifications"
+    }
+    
+    if server_name not in allowed_servers:
+        print(f"Error: Server '{server_name}' not found")
+        print("Available servers: basic_tool, basic_resource, basic_prompt, tool_progress,")
+        print("                   sampling, elicitation, completion, notifications")
+        sys.exit(1)
+
     try:
         module = importlib.import_module(f".{server_name}", package=__name__)
         module.mcp.run(cast(Literal["stdio", "sse", "streamable-http"], transport))
