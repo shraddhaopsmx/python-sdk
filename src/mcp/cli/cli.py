@@ -182,6 +182,25 @@ def _import_server(file: Path, server_object: str | None = None):
     # Handle module:object syntax
     if ":" in server_object:
         module_name, object_name = server_object.split(":", 1)
+
+        # Whitelist of allowed module prefixes to prevent arbitrary code execution
+        allowed_module_prefixes = [
+            "mcp.",  # MCP packages
+            "app.",  # Application modules
+            "server.",  # Server modules
+            "",  # Local modules in the current directory
+        ]
+
+        # Check if module_name is in the whitelist of allowed modules
+        if not any(module_name == prefix or module_name.startswith(f"{prefix}.") for prefix in allowed_module_prefixes):
+            logger.error(
+                f"Module '{module_name}' is not in the allowed modules list. "
+                "For security reasons, only modules with these prefixes are allowed: "
+                f"{', '.join(p for p in allowed_module_prefixes if p)}",
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+
         try:
             server_module = importlib.import_module(module_name)
             server = getattr(server_module, object_name, None)
