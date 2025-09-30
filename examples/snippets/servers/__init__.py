@@ -46,6 +46,10 @@ def run_server():
         print("                   sampling, elicitation, completion, notifications")
         sys.exit(1)
 
+    # The server_name is guaranteed to be in the whitelist at this point
+    # This provides additional security against loading arbitrary modules
+    assert server_name in allowed_servers, "Server name validation bypass detected"
+
     try:
         module = importlib.import_module(f".{server_name}", package=__name__)
         module.mcp.run(cast(Literal["stdio", "sse", "streamable-http"], transport))
