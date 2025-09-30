@@ -46,8 +46,14 @@ def run_server():
         print("                   sampling, elicitation, completion, notifications")
         sys.exit(1)
 
+    # Create a mapping of allowed server names to their module paths
+    server_modules = {
+        server: f".{server}" for server in allowed_servers
+    }
+
     try:
-        module = importlib.import_module(f".{server_name}", package=__name__)
+        # Use the mapping instead of directly formatting the string
+        module = importlib.import_module(server_modules[server_name], package=__name__)
         module.mcp.run(cast(Literal["stdio", "sse", "streamable-http"], transport))
     except ImportError:
         print(f"Error: Server '{server_name}' not found")
