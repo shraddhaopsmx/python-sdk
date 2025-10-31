@@ -22,15 +22,6 @@
 """
   CLI module for MCP (Managed Cloud Platform).
 """
-import argparse
-import functools
-import json
-import os
-import time
-
-from ..helper import api
-from ..helper import utils
-
 # -----------------------------------------------------------------------------
 # Setup logging configuration
 # -----------------------------------------------------------------------------
@@ -44,6 +35,9 @@ from ..helper import utils
 # Single place to setup logging for all modules
 # Typically place this in either __init__.py or in this main cli.py
 import logging
+import time
+
+from ..helper import api
 
 _DEFAULT_LOG_LEVEL = logging.DEBUG
 _DEFAULT_LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
