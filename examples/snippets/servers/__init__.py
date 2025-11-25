@@ -28,7 +28,7 @@ def run_server():
     server_name = sys.argv[1]
     transport = sys.argv[2] if len(sys.argv) > 2 else "stdio"
 
-    # Whitelist of allowed server modules to prevent loading arbitrary code
+    # Whitelist of allowed server names
     allowed_servers = {
         "basic_tool",
         "basic_resource", 
@@ -47,7 +47,27 @@ def run_server():
         sys.exit(1)
 
     try:
-        module = importlib.import_module(f".{server_name}", package=__name__)
+        # Use explicit conditional imports with string literals to satisfy static analysis
+        if server_name == "basic_tool":
+            module = importlib.import_module("examples.snippets.servers.basic_tool")
+        elif server_name == "basic_resource":
+            module = importlib.import_module("examples.snippets.servers.basic_resource")
+        elif server_name == "basic_prompt":
+            module = importlib.import_module("examples.snippets.servers.basic_prompt")
+        elif server_name == "tool_progress":
+            module = importlib.import_module("examples.snippets.servers.tool_progress")
+        elif server_name == "sampling":
+            module = importlib.import_module("examples.snippets.servers.sampling")
+        elif server_name == "elicitation":
+            module = importlib.import_module("examples.snippets.servers.elicitation")
+        elif server_name == "completion":
+            module = importlib.import_module("examples.snippets.servers.completion")
+        elif server_name == "notifications":
+            module = importlib.import_module("examples.snippets.servers.notifications")
+        else:
+            # This should never be reached due to the whitelist check above
+            raise ImportError(f"Server '{server_name}' not found")
+            
         module.mcp.run(cast(Literal["stdio", "sse", "streamable-http"], transport))
     except ImportError:
         print(f"Error: Server '{server_name}' not found")
