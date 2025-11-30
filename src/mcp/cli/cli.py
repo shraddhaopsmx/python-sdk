@@ -3,6 +3,7 @@
 import importlib.metadata
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -60,6 +61,34 @@ def _parse_env_var(env_var: str) -> tuple[str, str]:
         sys.exit(1)
     key, value = env_var.split("=", 1)
     return key.strip(), value.strip()
+
+
+def _is_safe_module_name(module_name: str, server_dir: Path) -> bool:
+    """Check if a module name is safe to import.
+
+    Args:
+        module_name: The module name to validate
+        server_dir: The directory containing the server file
+
+    Returns:
+        True if the module is safe to import, False otherwise
+    """
+    # Prevent absolute imports that could access arbitrary modules
+    if module_name.startswith("/") or "\\" in module_name:
+        return False
+
+    # Prevent directory traversal attempts
+    if ".." in module_name or module_name.startswith("."):
+        return False
+
+    # Only allow simple module names (letters, numbers, underscores)
+    # This prevents complex import paths that might escape the intended directory
+    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", module_name):
+        return False
+
+    # Check if a Python file with this name exists in the server directory
+    module_file = server_dir / f"{module_name}.py"
+    return module_file.exists() and module_file.is_file()
 
 
 def _build_uv_command(
@@ -182,6 +211,17 @@ def _import_server(file: Path, server_object: str | None = None):
     # Handle module:object syntax
     if ":" in server_object:
         module_name, object_name = server_object.split(":", 1)
+
+        # Security: Validate module_name to prevent arbitrary code execution
+        # Only allow relative imports within the same directory or safe standard modules
+        if not _is_safe_module_name(module_name, file.parent):
+            logger.error(
+                f"Module '{module_name}' is not allowed for security reasons. "
+                f"Only modules relative to the server file directory are permitted.",
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+
         try:
             server_module = importlib.import_module(module_name)
             server = getattr(server_module, object_name, None)
