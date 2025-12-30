@@ -116,6 +116,53 @@ def _parse_file_path(file_spec: str) -> tuple[Path, str | None]:
     return file_path, server_object
 
 
+def _validate_module_name(module_name: str, base_dir: Path) -> bool:
+    """Validate that a module name is safe to import and restrict to local modules.
+
+    Args:
+        module_name: The module name to validate
+        base_dir: The base directory where the server file is located
+
+    Returns:
+        True if the module name is safe to import
+    """
+    # Block path traversal attempts
+    if ".." in module_name or "/" in module_name or "\\" in module_name:
+        return False
+
+    # Only allow relative imports with safe characters
+    # Allow alphanumeric, dots, and underscores only
+    import re
+
+    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_.]*$", module_name):
+        return False
+
+    # Try to resolve as a relative import within the base directory
+    # This prevents importing arbitrary system modules
+    try:
+        # Convert module name to file path
+        module_path_parts = module_name.split(".")
+        potential_file = base_dir / "/".join(module_path_parts[:-1]) / f"{module_path_parts[-1]}.py"
+        potential_package = base_dir / "/".join(module_path_parts) / "__init__.py"
+        
+        # Check if it resolves to a file within the base directory
+        if potential_file.exists() or potential_package.exists():
+            # Ensure the resolved path is within the base directory (no escaping)
+            try:
+                if potential_file.exists():
+                    potential_file.resolve().relative_to(base_dir.resolve())
+                else:
+                    potential_package.resolve().relative_to(base_dir.resolve())
+                return True
+            except ValueError:
+                # Path escapes the base directory
+                return False
+    except (ValueError, OSError):
+        pass
+
+    return False
+
+
 def _import_server(file: Path, server_object: str | None = None):
     """Import a MCP server from a file.
 
@@ -182,10 +229,42 @@ def _import_server(file: Path, server_object: str | None = None):
     # Handle module:object syntax
     if ":" in server_object:
         module_name, object_name = server_object.split(":", 1)
+
+        # Validate module name for security
+        if not _validate_module_name(module_name, file.parent):
+            logger.error(
+                f"Invalid or unsafe module name '{module_name}'. "
+                f"Only relative imports to local modules are allowed.",
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+
+        # Load module using safe file-based approach instead of importlib.import_module
         try:
-            server_module = importlib.import_module(module_name)
+            # Convert module name to file path
+            module_path_parts = module_name.split(".")
+            module_file = file.parent
+            for part in module_path_parts:
+                module_file = module_file / part
+            
+            # Try .py file first, then package with __init__.py
+            if not module_file.with_suffix(".py").exists():
+                module_file = module_file / "__init__.py"
+            else:
+                module_file = module_file.with_suffix(".py")
+            
+            if not module_file.exists():
+                raise ImportError(f"Module file not found: {module_file}")
+            
+            # Load using safe file-based import
+            spec = importlib.util.spec_from_file_location(module_name, module_file)
+            if not spec or not spec.loader:
+                raise ImportError(f"Could not create spec for module: {module_name}")
+            
+            server_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(server_module)
             server = getattr(server_module, object_name, None)
-        except ImportError:
+        except (ImportError, OSError, AttributeError):
             logger.error(
                 f"Could not import module '{module_name}'",
                 extra={"file": str(file)},
