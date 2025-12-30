@@ -3,6 +3,7 @@
 import importlib.metadata
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -182,6 +183,40 @@ def _import_server(file: Path, server_object: str | None = None):
     # Handle module:object syntax
     if ":" in server_object:
         module_name, object_name = server_object.split(":", 1)
+
+        # SECURITY FIX: Validate module name to prevent arbitrary code execution
+        # This addresses Semgrep finding: non-literal-import (untrusted user input in importlib.import_module)
+
+        # Layer 1: Character validation - only allow safe characters in module names
+        # Prevents path traversal and injection attacks through special characters
+        if not re.match(r"^[a-zA-Z0-9_\-\.]+$", module_name):
+            logger.error(
+                f"Invalid module name '{module_name}'. Module names can only contain "
+                "alphanumeric characters, dots, underscores, and hyphens.",
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+
+        # Layer 2: Module blacklist - prevent import of potentially dangerous system modules
+        # These modules could be exploited to execute arbitrary system commands or access sensitive APIs
+        dangerous_modules = {
+            "os",  # File system and process operations
+            "subprocess",  # Process execution
+            "sys",  # Python system functions
+            "importlib",  # Dynamic imports (could be chained)
+            "__builtin__",  # Built-in functions (Python 2)
+            "builtins",  # Built-in functions (Python 3)
+            "exec",  # Code execution
+            "eval",  # Expression evaluation
+            "compile",  # Code compilation
+        }
+        if module_name in dangerous_modules or module_name.startswith(("os.", "subprocess.")):
+            logger.error(
+                f"Module '{module_name}' is not allowed for security reasons.",
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+
         try:
             server_module = importlib.import_module(module_name)
             server = getattr(server_module, object_name, None)
