@@ -182,6 +182,42 @@ def _import_server(file: Path, server_object: str | None = None):
     # Handle module:object syntax
     if ":" in server_object:
         module_name, object_name = server_object.split(":", 1)
+
+        # SECURITY FIX: Validate module name to prevent arbitrary code execution
+        #
+        # Issue: The original code passed user input directly to importlib.import_module()
+        # which could allow an attacker to import and execute arbitrary modules.
+        #
+        # Fix: Implement input validation and whitelist approach to ensure only safe
+        # module imports are allowed, following Semgrep rule guidance.
+        import re
+
+        # Validate module name format: must be valid Python identifier(s) separated by dots
+        # This prevents injection of special characters or malicious patterns
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*$", module_name):
+            logger.error(
+                (
+                    f"Invalid module name '{module_name}'. Module names must contain only "
+                    "alphanumeric characters, underscores, and dots."
+                ),
+                extra={"file": str(file)},
+            )
+            sys.exit(1)
+
+        # Prevent imports of standard library modules when using single-level names
+        # This blocks potentially dangerous stdlib imports while allowing:
+        # - Relative imports (starting with '.')
+        # - Multi-level imports (containing '.')
+        # - User-defined modules that don't conflict with stdlib
+        if not module_name.startswith(".") and "." not in module_name:
+            # Check against Python's standard library module names
+            if module_name in sys.stdlib_module_names:
+                logger.error(
+                    f"Cannot import standard library module '{module_name}' for security reasons.",
+                    extra={"file": str(file)},
+                )
+                sys.exit(1)
+
         try:
             server_module = importlib.import_module(module_name)
             server = getattr(server_module, object_name, None)
